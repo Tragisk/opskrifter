@@ -149,9 +149,6 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
   background:#24101f;color:#fff;border-radius:14px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.2);
   max-width:calc(100% - 32px);font-size:.85rem;
 }
-.gate{max-width:420px;margin:0 auto;padding:40px 20px}
-.gate h2{font-size:1.6rem;margin:0 0 8px}
-.gate p{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -187,21 +184,12 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
   <button class="btn" id="shopBtn">Tilføj til indkøb</button>
 </div>
 
-<div class="gate hidden" id="gate">
-  <h2>Åbn jeres link</h2>
-  <p>Opskrifterne åbnes via det delte link, som slutter med et # og en kode. Indsæt linket her, hvis siden er åbnet uden.</p>
-  <input class="field" id="gateInput" placeholder="Indsæt link eller kode" autocomplete="off">
-  <div class="sheet-actions"><button class="btn" id="gateBtn">Åbn opskrifterne</button></div>
-  <p class="hint" id="gateMsg"></p>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.js"></script>
 <script>
 (() => {
 const SB_URL = "https://jmkicrzqmzbetzzjoqtd.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impta2ljcnpxbXpiZXR6empvcXRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1MzY1NDUsImV4cCI6MjEwODExMjU0NX0.BHSSKBFBVZ0qESq-LFkUccpCFRsbhq50DQi4bxK6jx4";
 const CAT_ORDER = ["Aftensmad","Frokost","Morgenmad","Supper","Salater","Tilbehør","Brød","Bagværk","Desserter","Drikke","Andet"];
-const SECRET_RE = /^[A-Za-z0-9_-]{16,}$/;
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -223,29 +211,22 @@ const keyOf = s => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
 /* ---------- secret ---------- */
-function readSecret(){
-  const fromHash = decodeURIComponent((location.hash || "").replace(/^#/, "")).trim();
-  if (SECRET_RE.test(fromHash)) { store.set("opskrifter-secret", fromHash); return fromHash; }
-  const saved = store.get("opskrifter-secret");
-  if (saved) { history.replaceState(history.state, "", "#" + saved); return saved; }
-  return null;
-}
-const SECRET = readSecret();
+// Ingen kode længere. Gamle links med #kode virker stadig, koden fjernes bare fra adressen.
+if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
 
 /* ---------- state ---------- */
 let sb = null, recipes = [], cat = "Alle", current = null;
 
 async function load(){
   try {
-    const { data, error } = await sb.rpc("opskrifter_state", { p_secret: SECRET });
+    const { data, error } = await sb.rpc("opskrifter_state", { p_secret: null });
     if (error) throw error;
     recipes = data || [];
     renderHome();
     if (current){ const r = recipes.find(x => x.id === current.id); if (r){ current = r; renderRecipe(); } }
     else openFromState();
   } catch(e){
-    if (String(e.message || "").includes("Ugyldigt link")) showGate("Linket virker ikke. Tjek, at hele koden er med.");
-    else $("sub").textContent = "Kunne ikke hente opskrifterne. Tjek forbindelsen.";
+    $("sub").textContent = "Kunne ikke hente opskrifterne. Tjek forbindelsen.";
   }
 }
 
@@ -384,7 +365,7 @@ function openRecipe(r, push){
   current = r; offIng = new Set(); offStep = new Set();
   base = parseServ(r.portioner); serv = base ? base.n : null;
   allowed = base ? allowedServings(r, base) : [];
-  if (push) history.pushState({ id: r.id }, "", location.hash || "");
+  if (push) history.pushState({ id: r.id }, "", location.pathname + location.search);
   document.body.classList.add("cook");
   $("home").classList.add("hidden");
   $("rec").classList.remove("hidden"); $("cookbar").classList.remove("hidden");
@@ -509,49 +490,26 @@ function guessCat(name, st){
   }
   return null;
 }
-function indkobSecret(){ const s = store.get("indkob-secret"); return s && SECRET_RE.test(s) ? s : null; }
 async function indkobRpc(fn, args){
-  const { data, error } = await sb.rpc(fn, Object.assign({ p_secret: indkobSecret() }, args || {}));
+  const { data, error } = await sb.rpc(fn, Object.assign({ p_secret: null }, args || {}));
   if (error) throw error;
   return data;
-}
-async function sha(s){
-  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2,"0")).join("");
 }
 // fortæller indkøbsappen på de andre telefoner, at listen er ændret
 async function pingIndkob(){
   try {
-    const ch = sb.channel("indkob-" + (await sha(indkobSecret())).slice(0, 24), { config: { broadcast: { self: false } } });
+    const ch = sb.channel("indkob-faelles", { config: { broadcast: { self: false } } });
     await new Promise(res => { const t = setTimeout(res, 3000); ch.subscribe(s => { if (s === "SUBSCRIBED"){ clearTimeout(t); res(); } }); });
     await ch.send({ type: "broadcast", event: "changed", payload: { by: store.get("indkob-me") } });
     setTimeout(() => sb.removeChannel(ch), 1500);
   } catch(e){}
 }
-function askIndkobLink(then){
-  sheet((box, close) => {
-    const inp = h("input", { class: "field", placeholder: "Indsæt indkøbslinket", autocomplete: "off" });
-    const msg = h("p", { class: "hint" });
-    box.append(h("h3", null, "Forbind til indkøbslisten"),
-      h("p", { class: "hint" }, "Indsæt linket til jeres indkøbsliste (det, der slutter med # og en kode). Det skal kun gøres én gang på denne telefon."),
-      inp, msg,
-      h("div", { class: "sheet-actions" },
-        h("button", { class: "btn ghost", type: "button", onclick: close }, "Annullér"),
-        h("button", { class: "btn", type: "button", onclick: () => {
-          const v = inp.value.trim(); const code = v.includes("#") ? v.split("#").pop() : v;
-          if (!SECRET_RE.test(code)) { msg.textContent = "Det ligner ikke et gyldigt link."; return; }
-          store.set("indkob-secret", code); close(); then();
-        } }, "Gem")));
-  });
-}
 async function openShop(){
   if (!current) return;
-  if (!indkobSecret()) { askIndkobLink(openShop); return; }
   let st;
   try { st = await indkobRpc("indkob_state"); }
   catch(e){
-    if (String(e.message || "").includes("Ugyldigt link")) { store.set("indkob-secret", ""); askIndkobLink(openShop); }
-    else toast("Kunne ikke hente indkøbslisten. Tjek forbindelsen.");
+    toast("Kunne ikke hente indkøbslisten. Tjek forbindelsen.");
     return;
   }
   const onList = new Set((st.items || []).filter(i => !i.checked).map(i => keyOf(i.name)));
@@ -594,12 +552,7 @@ async function openShop(){
   });
 }
 $("shopBtn").addEventListener("click", openShop);
-$("cartLink").addEventListener("click", ev => {
-  const s = indkobSecret();
-  if (s) { $("cartLink").href = "../indkob/#" + s; return; }
-  ev.preventDefault();
-  askIndkobLink(() => { location.href = "../indkob/#" + indkobSecret(); });
-});
+
 
 /* ---------- wake lock ---------- */
 let wakeLock = null, wantWake = store.get("opskrifter-wake") === "1";
@@ -621,21 +574,8 @@ if ("wakeLock" in navigator){
   });
 }
 
-/* ---------- gate & boot ---------- */
-function showGate(msg){
-  $("home").classList.add("hidden"); $("rec").classList.add("hidden"); $("cookbar").classList.add("hidden");
-  $("gate").classList.remove("hidden"); $("sub").textContent = "";
-  if (msg) $("gateMsg").textContent = msg;
-}
-$("gateBtn").addEventListener("click", () => {
-  const v = $("gateInput").value.trim();
-  const code = v.includes("#") ? v.split("#").pop() : v;
-  if (!SECRET_RE.test(code)) { $("gateMsg").textContent = "Det ligner ikke en gyldig kode."; return; }
-  store.set("opskrifter-secret", code); location.hash = code; location.reload();
-});
-
+/* ---------- boot ---------- */
 function boot(){
-  if (!SECRET) { showGate(); return; }
   if (!window.supabase) { $("sub").textContent = "Kunne ikke indlæse. Tjek forbindelsen og genindlæs."; return; }
   sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   load();
