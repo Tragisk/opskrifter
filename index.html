@@ -596,7 +596,9 @@ async function openShop(){
 $("shopBtn").addEventListener("click", openShop);
 $("cartLink").addEventListener("click", ev => {
   const s = indkobSecret();
-  if (s) $("cartLink").href = "../indkob/#" + s;
+  if (s) { $("cartLink").href = "../indkob/#" + s; return; }
+  ev.preventDefault();
+  askIndkobLink(() => { location.href = "../indkob/#" + indkobSecret(); });
 });
 
 /* ---------- wake lock ---------- */
