@@ -345,8 +345,20 @@ function parseServ(s){
   const r = (s || "").match(/^\s*(\d+)\s*(.*)$/);
   return r ? { n: parseInt(r[1], 10), label: r[2].trim() } : null;
 }
-let base = null, serv = null;
+let base = null, serv = null, allowed = [];
 const factor = () => (base && serv) ? serv / base.n : 1;
+// kun antal portioner hvor ting der tælles i hele stykker (æg, bananer, dåser …) går op
+const COUNT_UNITS = ["", "stk", "stk.", "ds", "dåse", "dåser"];
+function allowedServings(r, b){
+  const counts = (r.ingredienser || []).map(i => parseAmt(i.m))
+    .filter(p => p && p.b == null && COUNT_UNITS.includes((p.unit.split(/\s+/)[0] || "").toLowerCase()));
+  const ok = [];
+  for (let n = 1; n <= 99; n++){
+    if (counts.every(p => { const v = p.a * n / b.n; return Math.abs(v - Math.round(v)) < 1e-9 && Math.round(v) >= 1; })) ok.push(n);
+  }
+  if (!ok.includes(b.n)) ok.push(b.n);
+  return ok.sort((x, y) => x - y);
+}
 function renderServ(){
   const box = $("serv");
   box.classList.toggle("hidden", !base);
@@ -354,19 +366,24 @@ function renderServ(){
   const l = $("servLabel");
   l.textContent = serv + (base.label ? " " + base.label : "");
   l.classList.toggle("changed", serv !== base.n);
-  $("servMinus").disabled = serv <= 1;
+  const i = allowed.indexOf(serv);
+  $("servMinus").disabled = i <= 0;
+  $("servPlus").disabled = i >= allowed.length - 1;
 }
-function setServ(n){
-  serv = Math.max(1, Math.min(99, n));
+function stepServ(dir){
+  const i = allowed.indexOf(serv), j = i + dir;
+  if (j < 0 || j >= allowed.length) return;
+  serv = allowed[j];
   renderRecipe();
 }
-$("servMinus").addEventListener("click", () => setServ(serv - 1));
-$("servPlus").addEventListener("click", () => setServ(serv + 1));
+$("servMinus").addEventListener("click", () => stepServ(-1));
+$("servPlus").addEventListener("click", () => stepServ(1));
 
 let offIng = new Set(), offStep = new Set();
 function openRecipe(r, push){
   current = r; offIng = new Set(); offStep = new Set();
   base = parseServ(r.portioner); serv = base ? base.n : null;
+  allowed = base ? allowedServings(r, base) : [];
   if (push) history.pushState({ id: r.id }, "", location.hash || "");
   document.body.classList.add("cook");
   $("home").classList.add("hidden");
