@@ -96,7 +96,10 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
 .row .m{color:var(--muted);font-size:.8rem;white-space:nowrap}
 .star{color:var(--star)}
 .plan-row{display:flex;align-items:center;border-top:1px solid var(--line)}
-.plan-row .row{border-top:0;flex:1;min-width:0}
+.plan-row .row{border-top:0;flex:1;min-width:0;padding-right:2px}
+.plan-check{flex:none;width:46px;height:48px;border:0;background:transparent;display:grid;place-items:center;padding:0}
+.plan-check span{width:24px;height:24px;border-radius:50%;border:2px solid var(--done);display:grid;place-items:center;color:#fff;font-size:.78rem;font-weight:800;line-height:1}
+.plan-check[aria-pressed="true"] span{background:var(--fill);border-color:var(--fill)}
 .x-btn{flex:none;width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:1.3rem;line-height:1}
 .plan-actions{display:flex;gap:8px;padding:8px 10px 10px;border-top:1px solid var(--line)}
 .plan-actions .btn{min-height:40px;font-size:.88rem}
@@ -339,6 +342,15 @@ function matches(r, q){
   if (keyOf(r.titel).includes(q)) return true;
   return (r.ingredienser || []).some(i => i.n && keyOf(i.n).includes(q));
 }
+// række med en lille cirkel til højre, der lægger retten på / fjerner den fra ugeplanen
+function recipeItem(r, opts){
+  const on = !!planEntry(r.id);
+  return h("div", { class: "plan-row" },
+    recipeRow(r, opts),
+    h("button", { class: "plan-check", type: "button", "aria-pressed": on ? "true" : "false", title: on ? "Fjern fra ugeplan" : "Føj til ugeplan",
+      "aria-label": (on ? "Fjern " : "Føj ") + r.titel + (on ? " fra ugeplanen" : " til ugeplanen"), onclick: () => setPlan(r, !on) },
+      h("span", null, on ? "✓" : "")));
+}
 function recipeRow(r, opts){
   opts = opts || {};
   return h("button", { class: "row", type: "button", onclick: () => openRecipe(r, true) },
@@ -375,9 +387,7 @@ function renderHome(){
     list.append(h("section", { class: "section" },
       h("h2", null, "Ugeplan (" + planned.length + ")"),
       h("div", { class: "card" },
-        planned.map(({ p, r }) => h("div", { class: "plan-row" },
-          recipeRow(r, { right: planCount(p, r), noStar: true }),
-          h("button", { class: "x-btn", type: "button", "aria-label": "Fjern " + r.titel + " fra ugeplanen", onclick: () => setPlan(r, false) }, "×"))),
+        planned.map(({ p, r }) => recipeItem(r, { right: planCount(p, r), noStar: true })),
         h("div", { class: "plan-actions" },
           h("button", { class: "btn", type: "button", onclick: openPlanShop }, "Tilføj alt til indkøb"),
           h("button", { class: "btn ghost", type: "button", style: "flex:none", onclick: clearPlan }, "Ryd")))));
@@ -388,14 +398,14 @@ function renderHome(){
 
   if (sortMode === "kat"){
     const favs = shown.filter(r => r.favorit);
-    if (top && favs.length) list.append(h("section", { class: "section" }, h("h2", null, "Favoritter"), h("div", { class: "card" }, favs.map(r => recipeRow(r, { noStar: true })))));
+    if (top && favs.length) list.append(h("section", { class: "section" }, h("h2", null, "Favoritter"), h("div", { class: "card" }, favs.map(r => recipeItem(r, { noStar: true })))));
     const groups = top ? cats : [null];
     for (const g of groups){
       const rows = shown.filter(r => g === null || (r.kategori || "Andet") === g);
       if (!rows.length) continue;
       list.append(h("section", { class: "section" },
         g ? h("h2", null, g + " (" + rows.length + ")") : null,
-        h("div", { class: "card" }, rows.map(r => recipeRow(r)))));
+        h("div", { class: "card" }, rows.map(r => recipeItem(r)))));
     }
     return;
   }
@@ -406,11 +416,11 @@ function renderHome(){
     made.sort((a, b) => sortMode === "senest" ? lastMade(b).localeCompare(lastMade(a)) : lastMade(a).localeCompare(lastMade(b)));
     rows = [...made, ...never];
     list.append(h("section", { class: "section" },
-      made.length ? h("div", null, h("h2", null, sortMode === "senest" ? "Senest lavet først" : "Længst siden først"), h("div", { class: "card" }, made.map(r => recipeRow(r)))) : null,
-      never.length ? h("div", { style: made.length ? "margin-top:12px" : null }, h("h2", null, "Ikke lavet endnu"), h("div", { class: "card" }, never.map(r => recipeRow(r)))) : null));
+      made.length ? h("div", null, h("h2", null, sortMode === "senest" ? "Senest lavet først" : "Længst siden først"), h("div", { class: "card" }, made.map(r => recipeItem(r)))) : null,
+      never.length ? h("div", { style: made.length ? "margin-top:12px" : null }, h("h2", null, "Ikke lavet endnu"), h("div", { class: "card" }, never.map(r => recipeItem(r)))) : null));
     return;
   }
-  list.append(h("section", { class: "section" }, h("div", { class: "card" }, rows.map(r => recipeRow(r)))));
+  list.append(h("section", { class: "section" }, h("div", { class: "card" }, rows.map(r => recipeItem(r)))));
 }
 $("q").addEventListener("input", renderHome);
 $("sort").addEventListener("change", () => { sortMode = $("sort").value; store.set("opskrifter-sort", sortMode); renderHome(); });
@@ -1187,7 +1197,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08i";
+const VERSION = "2026-11-08j";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
