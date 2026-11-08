@@ -1045,6 +1045,12 @@ async function openShopFor(entries, hintText){
       h("span", { class: "pn" }, r.name, multi && r.recipes.size ? h("small", null, [...r.recipes].join(", ")) : null),
       r.on ? h("span", { class: "on" }, "på listen") : (r.qty ? h("span", { class: "pq" }, r.qty) : null));
     const toggle = h("button", { class: "link-btn", type: "button", onclick: () => { showBasis = !showBasis; draw(); } });
+    // "Vælg alle" tager alt der ikke allerede står på listen (basisvarer kun hvis de er foldet ud)
+    const selectable = () => rows.filter(r => !r.on && (!r.isBasis || showBasis));
+    const allBtn = h("button", { class: "link-btn", type: "button", onclick: () => {
+      const sel = selectable(), all = sel.length && sel.every(r => r.pick);
+      sel.forEach(r => r.pick = !all); draw();
+    } });
     const draw = () => {
       const bk = basisKeys();
       rows.forEach(r => r.isBasis = bk.has(r.key));
@@ -1055,6 +1061,9 @@ async function openShopFor(entries, hintText){
       toggle.classList.toggle("hidden", !bas.length);
       toggle.textContent = (showBasis ? "Skjul basisvarer" : "Vis basisvarer") + " (" + bas.length + ")";
       if (showBasis) bas.forEach(r => basisEl.append(pickRow(r)));
+      const sel = selectable();
+      allBtn.classList.toggle("hidden", !sel.length);
+      allBtn.textContent = sel.length && sel.every(r => r.pick) ? "Fravælg alle" : "Vælg alle";
       const n = rows.filter(r => r.pick).length;
       go.disabled = n === 0;
       go.textContent = n === 0 ? "Vælg varer" : n === 1 ? "Tilføj 1 vare" : "Tilføj " + n + " varer";
@@ -1074,7 +1083,7 @@ async function openShopFor(entries, hintText){
       toast(ok === picked.length ? (ok === 1 ? "1 vare tilføjet til indkøb" : ok + " varer tilføjet til indkøb") : "Kun " + ok + " af " + picked.length + " blev tilføjet. Prøv igen.");
     });
     draw();
-    box.append(h("h3", null, "Hvad mangler du?"),
+    box.append(h("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px" }, h("h3", { style: "margin:0" }, "Hvad mangler du?"), allBtn),
       h("p", { class: "hint" }, hintText),
       listEl,
       h("div", { style: "display:flex;justify-content:space-between;gap:8px" }, toggle, h("button", { class: "link-btn", type: "button", onclick: () => basisSheet(draw) }, "Ret basisvarer")),
@@ -1118,7 +1127,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08e";
+const VERSION = "2026-11-08f";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
