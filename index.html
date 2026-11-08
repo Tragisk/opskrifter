@@ -858,7 +858,8 @@ function noteSheet(r, note){
 
 /* ---------- rediger opskrift ---------- */
 const UNIT_RE = "(?:g|gr|kg|ml|cl|dl|l|spsk|tsk|stk\\.?|fed|ds|dåse|dåser|knsp|nip|kop|kopper|bundt|skive|skiver|pakke|pk)";
-const AMT_TXT = "(?:\\d+(?:[.,]\\d+)?\\s*[½¼¾⅓⅔⅛]?|[½¼¾⅓⅔⅛])(?:\\s*[-–]\\s*(?:\\d+(?:[.,]\\d+)?\\s*[½¼¾⅓⅔⅛]?|[½¼¾⅓⅔⅛]))?";
+const AMT_ONE = "(?:\\d+\\s*/\\s*\\d+|\\d+(?:[.,]\\d+)?\\s*[½¼¾⅓⅔⅛]?|[½¼¾⅓⅔⅛])";
+const AMT_TXT = AMT_ONE + "(?:\\s*[-–]\\s*" + AMT_ONE + ")?";
 const LINE_RE = new RegExp("^(" + AMT_TXT + "(?:\\s+" + UNIT_RE + ")?)(?:\\s+|$)(.*)$", "i");
 function ingToLine(i){
   if (i.g) return "# " + i.g;
@@ -867,8 +868,16 @@ function ingToLine(i){
   if (i.alt && i.alt.m) s += " | " + [i.alt.m, i.alt.t].filter(Boolean).join(" ");
   return s;
 }
+// "1/4" -> "¼", "1 1/2" -> "1½" (brøker skrevet med skråstreg)
+const SLASH_FRAC = { "1/2": "½", "1/4": "¼", "3/4": "¾", "1/3": "⅓", "2/3": "⅔", "1/8": "⅛" };
+function normFrac(s){
+  return s.replace(/(\d+)?\s*\b(\d)\s*\/\s*(\d)\b/g, (all, whole, a, b) => {
+    const f = SLASH_FRAC[a + "/" + b];
+    return f ? (whole ? whole : "") + f : all;
+  });
+}
 function lineToIng(line){
-  line = line.trim(); if (!line) return null;
+  line = normFrac(line.trim()); if (!line) return null;
   if (line.startsWith("#")) { const g = line.replace(/^#+\s*/, "").trim(); return g ? { g } : null; }
   const [main, altPart] = line.split(/\s+\|\s+/);
   const ci = main.indexOf(", ");
@@ -1197,7 +1206,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08j";
+const VERSION = "2026-11-08k";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
