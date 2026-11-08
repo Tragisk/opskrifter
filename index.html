@@ -111,7 +111,15 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
 .steps li::before{content:counter(s);flex:none;width:1.45em;height:1.45em;border-radius:50%;background:var(--tint);color:var(--tint-ink);font-weight:700;font-size:.85em;display:grid;place-items:center;margin-top:.05em}
 .steps li.off{color:var(--done)}
 .steps li.off::before{background:var(--fill);color:#fff;content:"✓"}
-.rnote{margin:.6em 0 0;color:var(--muted);font-size:.88em}
+.notes{margin-top:.7em}
+.notes-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.25em}
+.notes-head h3{margin:0}
+.add-note{border:0;background:var(--tint);color:var(--tint-ink);border-radius:999px;font-size:.78em;font-weight:700;padding:.3em .8em;min-height:30px}
+.notes ul{list-style:none;margin:0;padding:0}
+.notes li button{display:block;width:100%;text-align:left;border:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.4em .6em;margin-top:.3em;font-size:.92em;line-height:1.28;white-space:pre-wrap;overflow-wrap:anywhere}
+.note-meta{color:var(--muted);font-size:.78rem;margin:4px 0 0}
+textarea.field{min-height:110px;resize:vertical;line-height:1.35;padding:8px 10px;font-family:inherit}
+.btn.danger{background:#a3253a}
 .cookbar{flex:none;width:100%;max-width:980px;margin:0 auto;padding:6px 16px calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;gap:8px}
 .btn{flex:1;border:0;border-radius:9px;min-height:44px;font-weight:600;font-size:.92rem;background:var(--fill);color:#fff;padding:0 14px}
 .btn.ghost{background:var(--tint);color:var(--tint-ink)}
@@ -414,12 +422,62 @@ function renderRecipe(){
     ings.length ? h("section", null, h("h3", null, "Ingredienser"), h("ul", { class: "ings" }, ings.map(ingLine))) : null,
     steps.length ? h("section", null, h("h3", null, "Sådan gør du"), h("ol", { class: "steps" }, steps.map((s, idx) =>
       h("li", { class: offStep.has(idx) ? "off" : null, onclick: ev => { toggleSet(offStep, idx); ev.currentTarget.classList.toggle("off"); } }, s))),
-      r.note ? h("p", { class: "rnote" }, r.note) : null) : null
+      notesBlock(r)) : notesBlock(r)
   ));
   $("shopBtn").disabled = !ings.some(i => i.n);
   fit();
 }
 function toggleSet(set, v){ set.has(v) ? set.delete(v) : set.add(v); }
+
+/* ---------- noter ---------- */
+function notesBlock(r){
+  const notes = r.noter || [];
+  return h("div", { class: "notes" },
+    h("div", { class: "notes-head" }, h("h3", null, "Noter"), h("button", { class: "add-note", type: "button", onclick: () => noteSheet(r, null) }, "+ Note")),
+    notes.length ? h("ul", null, notes.map(n => h("li", null, h("button", { type: "button", onclick: () => noteSheet(r, n), "aria-label": "Ret note" }, n.tekst)))) : null);
+}
+const fmtDate = d => new Date(d).toLocaleDateString("da-DK", { day: "numeric", month: "short", year: "numeric" });
+function noteSheet(r, note){
+  sheet((box, close) => {
+    const ta = h("textarea", { class: "field", maxlength: "1000", placeholder: "Fx \"Brug lidt mindre salt\" eller \"Louise elsker den med ekstra ost\"" });
+    ta.value = note ? note.tekst : "";
+    const save = h("button", { class: "btn", type: "button" }, "Gem");
+    const actions = h("div", { class: "sheet-actions" });
+    let armed = false;
+    const del = note ? h("button", { class: "btn ghost", type: "button" }, "Slet") : null;
+    if (del) del.addEventListener("click", async () => {
+      if (!armed){ armed = true; del.textContent = "Tryk igen for at slette"; del.classList.remove("ghost"); del.classList.add("danger"); return; }
+      del.disabled = true;
+      try {
+        const { error } = await sb.rpc("opskrifter_note_delete", { p_id: note.id });
+        if (error) throw error;
+        r.noter = (r.noter || []).filter(x => x.id !== note.id);
+        close(); renderRecipe(); toast("Noten er slettet");
+      } catch(e){ del.disabled = false; toast("Kunne ikke slette. Tjek forbindelsen."); }
+    });
+    save.addEventListener("click", async () => {
+      const t = ta.value.trim();
+      if (!t){ ta.focus(); return; }
+      save.disabled = true; save.textContent = "Gemmer…";
+      try {
+        if (note){
+          const { error } = await sb.rpc("opskrifter_note_update", { p_id: note.id, p_tekst: t });
+          if (error) throw error;
+          note.tekst = t; note.rettet = new Date().toISOString();
+        } else {
+          const { data, error } = await sb.rpc("opskrifter_note_add", { p_opskrift: r.id, p_tekst: t, p_af: store.get("indkob-me") });
+          if (error) throw error;
+          r.noter = [...(r.noter || []), data];
+        }
+        close(); renderRecipe();
+      } catch(e){ save.disabled = false; save.textContent = "Gem"; toast("Kunne ikke gemme. Tjek forbindelsen."); }
+    });
+    actions.append(h("button", { class: "btn ghost", type: "button", onclick: close }, "Annullér"), ...(del ? [del] : []), save);
+    const meta = note ? [note.af, "skrevet " + fmtDate(note.oprettet), note.rettet ? "rettet " + fmtDate(note.rettet) : null].filter(Boolean).join(" · ") : null;
+    box.append(...[h("h3", null, note ? "Ret note" : "Ny note"), meta ? h("p", { class: "note-meta" }, meta) : null, h("div", { style: "height:8px" }), ta, actions].filter(Boolean));
+    setTimeout(() => ta.focus(), 50);
+  });
+}
 // skrumper teksten trinvist, indtil hele opskriften passer på skærmen uden scroll
 function fit(){
   const box = $("rec");
@@ -579,7 +637,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08c";
+const VERSION = "2026-11-08d";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
