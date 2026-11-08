@@ -303,7 +303,7 @@ function fmt(v, unit){
   const u = unit.toLowerCase().split(/\s+/)[0] || "";
   if (u === "g" || u === "gr" || u === "ml"){
     if (v >= 1000) return { t: dec(v / 1000, 1), unit: u === "ml" ? "l" + unit.slice(u.length) : "kg" + unit.slice(u.length) };
-    const r = v < 10 ? Math.round(v * 2) / 2 : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 10) * 10;
+    const r = v < 10 ? Math.round(v * 2) / 2 : v < 50 ? Math.round(v) : v < 200 ? Math.round(v / 5) * 5 : Math.round(v / 10) * 10;
     return { t: dec(Math.max(r, .5), 1), unit };
   }
   if (["dl","l","kg","cl"].includes(u)) return { t: dec(v, 1), unit };
@@ -334,7 +334,8 @@ function allowedServings(r, b){
   const counts = (r.ingredienser || []).map(i => parseAmt(i.m))
     .filter(p => p && p.b == null && COUNT_UNITS.includes((p.unit.split(/\s+/)[0] || "").toLowerCase()));
   const ok = [];
-  for (let n = 1; n <= 99; n++){
+  const max = Math.max(b.n, r.maks || 99);
+  for (let n = 1; n <= max; n++){
     if (counts.every(p => { const v = p.a * n / b.n; return Math.abs(v - Math.round(v)) < 1e-9 && Math.round(v) >= 1; })) ok.push(n);
   }
   if (!ok.includes(b.n)) ok.push(b.n);
@@ -398,7 +399,8 @@ function ingLine(i, idx){
   if (i.g) return h("li", { class: "g" }, i.g);
   return h("li", { class: offIng.has(idx) ? "off" : null, onclick: ev => { toggleSet(offIng, idx); ev.currentTarget.classList.toggle("off"); } },
     i.m ? h("span", { class: "am" + (factor() !== 1 && parseAmt(i.m) ? " scaled" : "") }, scaleAmt(i.m, factor())) : null,
-    i.m ? " " : null, i.n, i.x ? h("span", { class: "x" }, ", " + i.x) : null);
+    i.m ? " " : null, i.n, i.x ? h("span", { class: "x" }, ", " + i.x) : null,
+    i.alt && i.alt.m ? h("span", { class: "x" }, " · ", h("span", { class: "am" + (factor() !== 1 && parseAmt(i.alt.m) ? " scaled" : "") }, scaleAmt(i.alt.m, factor())), i.alt.t ? " " + i.alt.t : "") : null);
 }
 function renderRecipe(){
   const r = current; if (!r) return;
