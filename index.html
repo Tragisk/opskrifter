@@ -676,6 +676,7 @@ $("menuBtn").addEventListener("click", () => {
       item(ICON.check, "Lavet i dag", doneToday ? "Allerede markeret i dag – tryk igen for at tilføje en gang mere" : "Gemmer datoen, så I kan se hvad I har lavet", () => markMade(r)),
       item(ICON.cal, inPlan ? "Fjern fra ugeplan" : "Føj til ugeplan", inPlan ? null : (base ? "Med " + serv + (base.label ? " " + base.label : "") : null), () => setPlan(r, !inPlan)),
       item(ICON.edit, "Ret opskrift", "Titel, ingredienser, trin m.m.", () => editSheet(r)),
+      item(ICON.clock, "Timer-indstillinger", { app: "Kun i appen", phone: "Kun på telefonen", both: "I appen og på telefonen" }[timerMode()], () => timerSheet()),
       h("a", { class: "menu-item", href: "../indkob/" }, svg(ICON.cart), h("span", null, "Åbn indkøbslisten")));
     const hist = r.lavet || [];
     if (hist.length){
@@ -711,11 +712,57 @@ function beep(){
     });
   } catch(e){}
 }
+// Timer-tilstand: "app" (kun i appen), "phone" (telefonens timer via Genveje), "both"
+const timerMode = () => store.get("opskrifter-timer-mode") || "app";
+const shortcutName = () => store.get("opskrifter-shortcut") || "Opskrift timer";
+function phoneTimer(mins){
+  // Kører en genvej i iPhonens Genveje-app med antal minutter som input
+  location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent(shortcutName()) + "&input=text&text=" + encodeURIComponent(String(mins));
+}
 function startTimer(mins, label){
-  ensureAudio();
-  timers.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), label, end: Date.now() + mins * 60000, done: false });
-  saveTimers(); renderTimers();
-  toast("Timer på " + (mins >= 60 && mins % 60 === 0 ? (mins / 60) + " t" : mins + " min") + " er startet");
+  const mode = timerMode();
+  const txt = mins >= 60 && mins % 60 === 0 ? (mins / 60) + " t" : mins + " min";
+  if (mode !== "phone"){
+    ensureAudio();
+    timers.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), label, end: Date.now() + mins * 60000, done: false });
+    saveTimers(); renderTimers();
+  }
+  if (mode === "app") toast("Timer på " + txt + " er startet");
+  else { toast(mode === "both" ? "Timer på " + txt + " startet her og på telefonen" : "Sætter telefonens timer på " + txt); setTimeout(() => phoneTimer(mins), 250); }
+}
+function timerSheet(){
+  sheet((box, close) => {
+    let mode = timerMode();
+    const opts = [["app", "Kun i appen", "Nedtælling nederst på skærmen, bipper når appen er åben"], ["phone", "Kun på telefonen", "Sætter telefonens egen timer via Genveje"], ["both", "Begge dele", "Starter i appen og på telefonen"]];
+    const listEl = h("div", { class: "pick-list", role: "radiogroup" });
+    const name = h("input", { class: "field", autocomplete: "off" }); name.value = shortcutName();
+    const guide = h("div");
+    const draw = () => {
+      listEl.textContent = "";
+      opts.forEach(([v, t, sm]) => listEl.append(h("button", { class: "pick", type: "button", role: "radio", "aria-checked": mode === v ? "true" : "false", onclick: () => { mode = v; draw(); } },
+        h("span", { class: "box", style: "border-radius:50%" }, mode === v ? "✓" : ""), h("span", { class: "pn" }, t, h("small", null, sm)))));
+      guide.classList.toggle("hidden", mode === "app");
+    };
+    draw();
+    guide.append(
+      h("h4", null, "Opsætning på iPhone (én gang)"),
+      h("ol", { class: "hint", style: "padding-left:18px;margin:4px 0 8px;line-height:1.45" },
+        h("li", null, "Åbn appen Genveje, og opret en ny genvej."),
+        h("li", null, "Tilføj handlingen “Start timer”."),
+        h("li", null, "Tryk på tiden i handlingen, vælg “Genvejsinput”, og sæt enheden til minutter."),
+        h("li", null, "Giv genvejen præcis det navn, der står herunder.")),
+      h("label", { class: "lbl" }, "Genvejens navn"), name,
+      h("p", { class: "hint", style: "margin-top:8px" }, "Når timeren sættes, åbner Genveje kort. Gå tilbage til opskrifterne bagefter. Virker kun på iPhone og iPad."),
+      h("button", { class: "link-btn", type: "button", onclick: () => { store.set("opskrifter-shortcut", name.value.trim() || "Opskrift timer"); phoneTimer(1); } }, "Test med 1 minut"));
+    box.append(h("h3", null, "Timer"), listEl, guide,
+      h("div", { class: "sheet-actions" },
+        h("button", { class: "btn ghost", type: "button", onclick: close }, "Annullér"),
+        h("button", { class: "btn", type: "button", onclick: () => {
+          store.set("opskrifter-timer-mode", mode);
+          store.set("opskrifter-shortcut", name.value.trim() || "Opskrift timer");
+          close(); toast("Timer-indstilling gemt");
+        } }, "Gem")));
+  });
 }
 function stopTimer(id){
   timers = timers.filter(t => t.id !== id);
@@ -1127,7 +1174,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08f";
+const VERSION = "2026-11-08g";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
