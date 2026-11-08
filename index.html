@@ -576,6 +576,19 @@ if ("wakeLock" in navigator){
   });
 }
 
+/* ---------- auto-opdatering ---------- */
+// Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
+const VERSION = "2026-11-08b";
+async function checkUpdate(){
+  try {
+    const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
+    const m = (await res.text()).match(/const VERSION = "([^"]+)"/);
+    if (m && m[1] !== VERSION) location.reload();
+  } catch(e){}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+checkUpdate();
+
 /* ---------- boot ---------- */
 function boot(){
   if (!window.supabase) { $("sub").textContent = "Kunne ikke indlæse. Tjek forbindelsen og genindlæs."; return; }
