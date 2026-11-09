@@ -51,6 +51,16 @@ body{
   -webkit-tap-highlight-color:transparent;
 }
 body.cook{height:100dvh;overflow:hidden;display:flex;flex-direction:column}
+/* Freshly (HelloFresh-opskrifter): orange tema */
+body.fresh{--brand:#e8650f;--fill:#c2510a;--bg:#fff6ef;--surface:#ffffff;--ink:#2a160a;--muted:#8a6a55;--line:#f3dccb;--tint:#fde6d4;--tint-ink:#8a3a06;--done:#c4a48f}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) body.fresh{--brand:#9a3f0a;--fill:#d4651a;--bg:#1a0e07;--surface:#26150b;--ink:#fbeee4;--muted:#c3a28c;--line:#43291a;--tint:#3a2112;--tint-ink:#ffcfa8;--done:#8a6f5e}
+}
+:root[data-theme="dark"] body.fresh{--brand:#9a3f0a;--fill:#d4651a;--bg:#1a0e07;--surface:#26150b;--ink:#fbeee4;--muted:#c3a28c;--line:#43291a;--tint:#3a2112;--tint-ink:#ffcfa8;--done:#8a6f5e}
+.thumb{width:54px;height:54px;border-radius:9px;object-fit:cover;flex:none;background:var(--tint)}
+.head-thumb{width:38px;height:38px;border-radius:9px;flex:none;border:0;padding:0;overflow:hidden;background:rgba(255,255,255,.1)}
+.head-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.big-img{width:100%;border-radius:14px;display:block;margin-top:8px}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:3px solid #b98bbd; outline-offset:2px}
@@ -215,7 +225,11 @@ select.field{appearance:auto}
     <button class="icon-btn hidden" id="backBtn" aria-label="Tilbage" title="Tilbage">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
     </button>
+    <button class="head-thumb hidden" id="headThumb" type="button" aria-label="Vis billede af retten"><img alt=""></button>
     <h1 id="title">Opskrifter</h1>
+    <button class="icon-btn" id="freshBtn" aria-pressed="false" aria-label="Freshly – HelloFresh-opskrifter" title="Freshly – HelloFresh-opskrifter">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+    </button>
     <button class="icon-btn hidden" id="favBtn" aria-pressed="false" aria-label="Favorit" title="Favorit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z"/></svg>
     </button>
@@ -304,6 +318,19 @@ if (location.hash) history.replaceState(history.state, "", location.pathname + l
 
 /* ---------- state ---------- */
 let sb = null, recipes = [], plan = [], basis = [], cat = "Alle", current = null;
+// "main" = egne opskrifter, "fresh" = Freshly (HelloFresh)
+let mode = (history.state && history.state.view) || "main";
+const isFresh = r => r && r.kilde === "hellofresh";
+const inMode = r => mode === "fresh" ? isFresh(r) : !isFresh(r);
+const pool = () => recipes.filter(inMode);
+function applyTheme(){
+  const fresh = current ? isFresh(current) : mode === "fresh";
+  document.body.classList.toggle("fresh", fresh);
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.setAttribute("content", fresh ? "#e8650f" : "#321134");
+  $("freshBtn").setAttribute("aria-pressed", mode === "fresh" ? "true" : "false");
+  if (!current) $("title").textContent = mode === "fresh" ? "Freshly" : "Opskrifter";
+}
 let sortMode = store.get("opskrifter-sort") || "kat";
 $("sort").value = sortMode;
 
@@ -329,7 +356,7 @@ const planEntry = id => plan.find(p => p.opskrift_id === id);
 
 /* ---------- home ---------- */
 function catsPresent(){
-  const set = new Set(recipes.map(r => r.kategori || "Andet"));
+  const set = new Set(pool().map(r => r.kategori || "Andet"));
   const known = CAT_ORDER.filter(c => set.has(c) && c !== "Andet");
   const extra = [...set].filter(c => !CAT_ORDER.includes(c)).sort((a,b) => a.localeCompare(b, "da"));
   return [...known, ...extra, ...(set.has("Andet") ? ["Andet"] : [])];
@@ -354,6 +381,7 @@ function recipeItem(r, opts){
 function recipeRow(r, opts){
   opts = opts || {};
   return h("button", { class: "row", type: "button", onclick: () => openRecipe(r, true) },
+    r.billede ? h("img", { class: "thumb", src: r.billede, alt: "", loading: "lazy" }) : null,
     h("span", { class: "tw" },
       h("span", { class: "t" }, r.favorit && !opts.noStar ? h("span", { class: "star", "aria-label": "Favorit" }, "★ ") : null, r.titel),
       madeText(r) ? h("span", { class: "t2" }, madeText(r)) : null),
@@ -365,8 +393,10 @@ function planCount(p, r){
   return (p.antal || b.n) + (b.label ? " " + b.label : "");
 }
 function renderHome(){
-  const n = recipes.length;
-  $("sub").textContent = n === 0 ? "Ingen opskrifter endnu" : n === 1 ? "1 opskrift" : n + " opskrifter";
+  applyTheme();
+  const n = pool().length;
+  const cnt = n === 0 ? "Ingen opskrifter endnu" : n === 1 ? "1 opskrift" : n + " opskrifter";
+  $("sub").textContent = mode === "fresh" ? "HelloFresh-opskrifter · " + cnt.toLowerCase() : cnt;
   const cats = catsPresent();
   if (cat !== "Alle" && !cats.includes(cat)) cat = "Alle";
   const chips = $("chips"); chips.textContent = "";
@@ -383,7 +413,7 @@ function renderHome(){
 
   // ugeplan
   const planned = plan.map(p => ({ p, r: byId(p.opskrift_id) })).filter(x => x.r);
-  if (top && planned.length){
+  if (top && planned.length && mode === "main"){
     list.append(h("section", { class: "section" },
       h("h2", null, "Ugeplan (" + planned.length + ")"),
       h("div", { class: "card" },
@@ -393,7 +423,7 @@ function renderHome(){
           h("button", { class: "btn ghost", type: "button", style: "flex:none", onclick: clearPlan }, "Ryd")))));
   }
 
-  const shown = recipes.filter(r => (cat === "Alle" || (r.kategori || "Andet") === cat) && matches(r, q));
+  const shown = pool().filter(r => (cat === "Alle" || (r.kategori || "Andet") === cat) && matches(r, q));
   if (!shown.length){ list.append(h("div", { class: "empty" }, h("strong", null, "Ingen fund"), "Prøv et andet ord eller en anden kategori.")); return; }
 
   if (sortMode === "kat"){
@@ -528,14 +558,32 @@ let offIng = new Set(), offStep = new Set();
 function setHeaderMode(cook){
   ["backBtn","favBtn","menuBtn"].forEach(id => $(id).classList.toggle("hidden", !cook));
   $("cartLink").classList.toggle("hidden", cook);
+  $("freshBtn").classList.toggle("hidden", cook);
+  if (!cook) $("headThumb").classList.add("hidden");
 }
+function setMode(m, push){
+  if (m === mode) return;
+  mode = m; cat = "Alle"; $("q").value = "";
+  if (push) history.pushState({ view: m }, "", location.pathname + location.search);
+  closeRecipe();
+}
+$("freshBtn").addEventListener("click", () => {
+  if (mode === "main") setMode("fresh", true);
+  else if (history.state && history.state.view === "fresh" && !history.state.id) history.back();
+  else { history.replaceState(null, "", location.pathname + location.search); setMode("main", false); }
+});
+$("headThumb").addEventListener("click", () => {
+  if (!current || !current.billede) return;
+  sheet((box, close) => box.append(h("h3", null, current.titel), h("img", { class: "big-img", src: current.billede, alt: "Billede af " + current.titel }),
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", type: "button", onclick: close }, "Luk"))));
+});
 function openRecipe(r, push){
   current = r; offIng = new Set(); offStep = new Set();
   base = parseServ(r.portioner); serv = base ? base.n : null;
   allowed = base ? allowedServings(r, base) : [];
   const p = planEntry(r.id);
   if (base && p && p.antal && allowed.includes(p.antal)) serv = p.antal;
-  if (push) history.pushState({ id: r.id }, "", location.pathname + location.search);
+  if (push) history.pushState({ id: r.id, view: mode }, "", location.pathname + location.search);
   document.body.classList.add("cook");
   $("home").classList.add("hidden");
   $("rec").classList.remove("hidden"); $("cookbar").classList.remove("hidden");
@@ -548,17 +596,18 @@ function closeRecipe(){
   $("home").classList.remove("hidden");
   $("rec").classList.add("hidden"); $("cookbar").classList.add("hidden");
   setHeaderMode(false);
-  $("title").textContent = "Opskrifter";
   renderHome();
   window.scrollTo(0, 0);
 }
 function openFromState(){
+  mode = (history.state && history.state.view) || "main";
   const id = history.state && history.state.id;
   const r = id && byId(id);
   if (r) openRecipe(r, false);
 }
 $("backBtn").addEventListener("click", () => { if (history.state && history.state.id) history.back(); else closeRecipe(); });
 window.addEventListener("popstate", () => {
+  mode = (history.state && history.state.view) || "main";
   const id = history.state && history.state.id;
   const r = id && byId(id);
   if (r) openRecipe(r, false); else closeRecipe();
@@ -591,6 +640,9 @@ function stepContent(s, idx){
 function renderRecipe(){
   const r = current; if (!r) return;
   $("title").textContent = r.titel;
+  applyTheme();
+  $("headThumb").classList.toggle("hidden", !r.billede);
+  if (r.billede) $("headThumb").firstElementChild.src = r.billede;
   $("sub").textContent = [r.kategori, r.tid, base ? null : r.portioner, r.antal_lavet ? "lavet " + r.antal_lavet + "×, sidst " + fmtShort(lastMade(r)) : null].filter(Boolean).join(" · ");
   $("favBtn").setAttribute("aria-pressed", r.favorit ? "true" : "false");
   $("favBtn").title = r.favorit ? "Fjern fra favoritter" : "Gør til favorit";
@@ -900,7 +952,14 @@ function parseIngs(text){
       const tmp = lineToIng("x | " + line.replace(/^\|\s*/, ""));
       if (tmp && tmp.alt){ out[out.length - 1].alt = tmp.alt; continue; }
     }
-    const o = lineToIng(line); if (o) out.push(o);
+    const o = lineToIng(line);
+    if (!o) continue;
+    // "5 g ved koldhævning" / "eller 2 dl fløde" på egen linje = alternativ mængde til linjen over
+    const prev = out[out.length - 1];
+    if (o.m && /^(ved|eller)\b/i.test(o.n) && prev && !prev.g && prev.m && !prev.alt){
+      prev.alt = { m: o.m, t: o.n + (o.x ? ", " + o.x : "") }; continue;
+    }
+    out.push(o);
   }
   return out;
 }
@@ -934,12 +993,13 @@ function editSheet(r){
       if (!t){ msg.textContent = "Opskriften skal have en titel."; titel.focus(); return; }
       const mk = maks.value.trim();
       if (mk && !/^\d{1,2}$/.test(mk)){ msg.textContent = "Maks antal skal være et tal fra 1 til 99."; maks.focus(); return; }
-      const data = {
+      const data = r ? {} : { kilde: mode === "fresh" ? "hellofresh" : null };
+      Object.assign(data, {
         titel: t, kategori: kat.value, portioner: port.value.trim(), maks: mk && parseInt(mk, 10) >= 1 ? parseInt(mk, 10) : "",
         tid: tid.value.trim(),
         ingredienser: parseIngs(ings.value),
         trin: trin.value.split("\n").map(s => s.trim()).filter(Boolean)
-      };
+      });
       save.disabled = true; save.textContent = "Gemmer…";
       try {
         const id = await rpc("opskrifter_save", { p_id: r ? r.id : null, p_data: data });
@@ -1206,7 +1266,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-08k";
+const VERSION = "2026-11-09b";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
