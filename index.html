@@ -138,6 +138,10 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 40px}
 .steps li::before{content:counter(s);flex:none;width:1.45em;height:1.45em;border-radius:50%;background:var(--tint);color:var(--tint-ink);font-weight:700;font-size:.85em;display:grid;place-items:center;margin-top:.05em}
 .steps li.off{color:var(--done)}
 .steps li.off::before{background:var(--fill);color:#fff;content:"✓"}
+.kw{border:0;background:transparent;color:var(--tint-ink);font-weight:700;padding:0;margin:0;font-size:inherit;line-height:inherit;text-decoration:underline dotted;text-underline-offset:3px;text-decoration-thickness:2px}
+.ings li.hl{background:var(--tint);border-radius:6px;box-shadow:0 0 0 .2em var(--tint);animation:hl 2.6s ease-out forwards}
+@keyframes hl{0%,70%{background:var(--tint);box-shadow:0 0 0 .2em var(--tint)}100%{background:transparent;box-shadow:0 0 0 .2em transparent}}
+@media (prefers-reduced-motion: reduce){.ings li.hl{animation:none}}
 .tm{border:0;background:var(--tint);color:var(--tint-ink);font-weight:700;border-radius:6px;padding:0 .3em;margin:0 .05em;font-size:inherit;line-height:inherit;display:inline-flex;align-items:center;gap:.2em}
 .tm svg{width:.85em;height:.85em}
 .notes{margin-top:.7em}
@@ -613,9 +617,20 @@ window.addEventListener("popstate", () => {
   if (r) openRecipe(r, false); else closeRecipe();
 });
 
+// tørrede krydderier – lyser op, når man trykker på "krydderierne" i et trin
+const SPICES = new Set(["paprika","røget paprika","spidskommen","hvidløgspulver","løgpulver","stødt koriander","chiliflager","chilipulver","cayennepeber","oregano","timian","allehånde","kanel","gurkemeje","karry","garam masala","stødt ingefær","muskatnød","kardemomme","nelliker","sumak","za'atar","basilikum, tørret","rosmarin, tørret"]);
+const isSpice = i => !!(i && i.n && (i.k || SPICES.has(keyOf(i.n))));
+function flashSpices(){
+  const els = [...document.querySelectorAll('#rec .ings li[data-k="1"]')];
+  if (!els.length) return;
+  els.forEach(el => { el.classList.remove("hl"); void el.offsetWidth; el.classList.add("hl"); });
+  if ($("rec").classList.contains("scroll")) els[0].scrollIntoView({ block: "center", behavior: "smooth" });
+  clearTimeout(flashSpices.t);
+  flashSpices.t = setTimeout(() => els.forEach(el => el.classList.remove("hl")), 2700);
+}
 function ingLine(i, idx){
   if (i.g) return h("li", { class: "g" }, i.g);
-  return h("li", { class: offIng.has(idx) ? "off" : null, onclick: ev => { toggleSet(offIng, idx); ev.currentTarget.classList.toggle("off"); } },
+  return h("li", { class: offIng.has(idx) ? "off" : null, "data-k": isSpice(i) ? "1" : null, onclick: ev => { toggleSet(offIng, idx); ev.currentTarget.classList.toggle("off"); } },
     i.m ? h("span", { class: "am" + (factor() !== 1 && parseAmt(i.m) ? " scaled" : "") }, scaleAmt(i.m, factor())) : null,
     i.m ? " " : null, i.n, i.x ? h("span", { class: "x" }, ", " + i.x) : null,
     i.alt && i.alt.m ? h("span", { class: "x" }, " · ", h("span", { class: "am" + (factor() !== 1 && parseAmt(i.alt.m) ? " scaled" : "") }, scaleAmt(i.alt.m, factor())), i.alt.t ? " " + i.alt.t : "") : null);
@@ -623,6 +638,18 @@ function ingLine(i, idx){
 // tider i trin bliver til knapper, der starter en timer ("10 min", "45-60 min", "1 time")
 const TIME_RE = /(\d+)(?:\s*[-–]\s*(\d+))?\s*(minutter|minut|min|timer|time|t)(?=[\s.,;:)!]|$)/gi;
 function stepContent(s, idx){
+  // "krydderierne"/"krydderiet" bliver til et tryk, der viser krydderierne i ingredienslisten
+  const hasSpices = (current.ingredienser || []).some(isSpice);
+  if (!hasSpices) return timeParts(s, idx);
+  const out = [];
+  s.split(/(krydderierne|krydderiet)/i).forEach((part, j) => {
+    if (j % 2) out.push(h("button", { class: "kw", type: "button", "aria-label": "Vis krydderierne i ingredienslisten",
+      onclick: ev => { ev.stopPropagation(); flashSpices(); } }, part));
+    else out.push(...timeParts(part, idx));
+  });
+  return out;
+}
+function timeParts(s, idx){
   const out = []; let last = 0, m;
   TIME_RE.lastIndex = 0;
   while ((m = TIME_RE.exec(s))){
@@ -1266,7 +1293,7 @@ if ("wakeLock" in navigator){
 
 /* ---------- auto-opdatering ---------- */
 // Henter siden uden cache, når appen åbnes, og genindlæser hvis der ligger en nyere version
-const VERSION = "2026-11-09b";
+const VERSION = "2026-11-09c";
 async function checkUpdate(){
   try {
     const res = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
